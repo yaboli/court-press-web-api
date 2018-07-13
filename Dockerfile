@@ -6,7 +6,9 @@ RUN apt-get update \
   && ln -s /usr/bin/python3 python \
   && pip3 install --upgrade pip
 ENV LANG C.UTF-8
-COPY . /app
+COPY /resources /app/resources
+COPY app.py /app/app.py
+COPY requirements.txt /app/requirements.txt
 WORKDIR /app
 RUN pip install -r requirements.txt
 ENTRYPOINT ["python3"]
