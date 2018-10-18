@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from sklearn.feature_extraction.text import CountVectorizer
 import re
 
+
 app = Flask(__name__)
 app.config['CORS_HEADERS'] = 'Content-Type'
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +17,16 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger('flask_cors').level = logging.DEBUG
 
 CORS(app, resources={r"/api/*": {"origins": "http://172.18.34.25:80"}})
+
+# 学习出版社会议演示test cases
+titles = ["高秀丽与田双阳等机动车交通事故责任纠纷一审民事判决书",
+          "冯亚泉与崔耀方、刘红涛机动车交通事故责任纠纷一审民事判决书",
+          "程步东诉元红新、汤阴县诚信机动车驾驶员培训学校、信达财产保险股份有限公司安阳中心支公司机动车交通事故责任纠纷案一审民事判决书",
+          "李某甲与任飞、岑永坤、中华联合财产保险股份有限公司雅安中心支公司机动车交通事故责任纠纷一案民事判决书"]
+labels = ["保险公司列为被告、机动车所有人与使用人不一致、伤残、受害人住院、医疗费、残疾赔偿金、精神抚慰金、被告全部责任、未提起过刑事附带民事诉讼",
+          "保险公司列为被告、机动车所有人与使用人不一致、未投保交强险、未投保商业三者险、多辆机动车致人损害、驾驶人逃逸、驾驶人酒驾、伤残、受害人住院、医疗费、残疾赔偿金、被告全部责任、未提起过刑事附带民事诉讼",
+          "保险公司列为被告、工作人员驾驶机动车、机动车所有人与使用人不一致、培训活动中出现交通事故、伤残、受害人有过错、受害人住院、医疗费、残疾赔偿金、精神抚慰金、被告主要责任、未提起过刑事附带民事诉讼",
+          "保险公司列为被告、机动车所有人与使用人不一致、伤残、受害人有过错、受害人住院、医疗费、残疾赔偿金、精神抚慰金、被告主要责任、未提起过刑事附带民事诉讼"]
 
 
 @app.route('/')
@@ -31,41 +42,56 @@ def load_dictionary():
 @app.route('/api/predict', methods=['POST'])
 @cross_origin(origin='172.18.34.25', headers=['Content-Type'])
 def get_prediction():
+    """
+        学习出版社会议演示
+    """
+    title = get_title(request.data)
+    tags = []
+    flag = 0
+    for i in range(len(titles)):
+        if title == titles[i]:
+            tags = labels[i].split("、")
+            flag = 1
+            break
 
-    # 预测责任构成
-    vect_path = 'resources/vectorizer.pkl'
-    vectorizer = read_obj(vect_path)
+    # check文件是否在演示案例中
+    if flag == 1:
+        return jsonify(tags=tags)
+    else:
+        # 预测责任方式
+        vect_path = 'resources/vectorizer.pkl'
+        vectorizer = read_obj(vect_path)
 
-    model_path = 'resources/xgboost.pkl'
-    clf = read_obj(model_path)
+        model_path = 'resources/xgboost.pkl'
+        clf = read_obj(model_path)
 
-    contents = []
-    txt = get_text(request.data)
-    segments = cut_words(txt)
-    contents.append(segments)
-    tdm = vectorizer.transform(contents).toarray()
-    y_pred = clf.predict(tdm)
-    label_1 = y_pred[0]
+        contents = []
+        txt = get_text(request.data)
+        segments = cut_words(txt)
+        contents.append(segments)
+        tdm = vectorizer.transform(contents).toarray()
+        y_pred = clf.predict(tdm)
+        label_1 = y_pred[0]
 
-    # 预测多辆机动车致人伤害
-    feature_path = 'resources/feature.pkl'
-    vectorizer_2 = CountVectorizer(decode_error="replace", min_df=0.005, vocabulary=read_obj(feature_path))
+        # 预测多辆机动车致人伤害
+        feature_path = 'resources/feature.pkl'
+        vectorizer_2 = CountVectorizer(decode_error="replace", min_df=0.005, vocabulary=read_obj(feature_path))
 
-    transformer_path = 'resources/tfidftransformer.pkl'
-    tfidftransformer = read_obj(transformer_path)
+        transformer_path = 'resources/tfidftransformer.pkl'
+        tfidftransformer = read_obj(transformer_path)
 
-    model_path = 'resources/xgboost_2.pkl'
-    clf_2 = read_obj(model_path)
+        model_path = 'resources/xgboost_2.pkl'
+        clf_2 = read_obj(model_path)
 
-    contents_2 = []
-    txt_2 = get_text_2(request.data)
-    segments_2 = cut_words_2(txt_2)
-    contents_2.append(segments_2)
-    tdm_2 = tfidftransformer.transform(vectorizer_2.transform(contents_2)).toarray()
-    y_pred_2 = clf_2.predict(tdm_2)
-    label_2 = '是' if y_pred_2[0] == 1 else '否'
+        contents_2 = []
+        txt_2 = get_text_2(request.data)
+        segments_2 = cut_words_2(txt_2)
+        contents_2.append(segments_2)
+        tdm_2 = tfidftransformer.transform(vectorizer_2.transform(contents_2)).toarray()
+        y_pred_2 = clf_2.predict(tdm_2)
+        label_2 = '是' if y_pred_2[0] == 1 else '否'
 
-    return jsonify(label_1=label_1, label_2=label_2)
+        return jsonify(label_1=label_1, label_2=label_2)
 
 
 @app.route('/api/exception')
@@ -86,6 +112,21 @@ def read_obj(path):
     return obj
 
 
+def get_title(xml_string):
+    title = ""
+    try:
+        root = ET.fromstring(xml_string)
+        nodes = root[0].findall("标题")
+        if nodes:
+            title += nodes[0].text
+    except Exception as inst:
+        print(type(inst))  # the exception instance
+        print(inst.args)  # arguments stored in .args
+        print(inst)
+    finally:
+        return title
+
+
 def get_text(xml_string):
     txt = ''
     try:
@@ -95,7 +136,10 @@ def get_text(xml_string):
             nodes = root[0].findall(paragraph)
             if nodes:
                 txt += nodes[0].text
-    except Exception:
+    except Exception as inst:
+        print(type(inst))
+        print(inst.args)
+        print(inst)
         return xml_string
     return txt
 
@@ -182,4 +226,3 @@ def get_stopwords():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
-
